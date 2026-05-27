@@ -146,7 +146,6 @@ export default function Home() {
         <main style={{ flex:1, padding:'2rem', background:'#f0f7ea', overflowY:'auto' }}>
           {view==='hoy'        && <HoyView        data={data} T={T} addTask={addTask} toggleTask={toggleTask} deleteTask={deleteTask} setModal={setModal}/>}
           {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal}/>}
-          }
           {view==='bloodbowl'  && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="bloodbowl"/>}
           {view==='futbol'     && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="futbol"/>}
           {view==='quedadas'   && <QuedadasView    data={data} T={T} setModal={setModal} deleteQuedada={deleteQuedada} cycleStatus={cycleStatus}/>}
