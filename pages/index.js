@@ -16,7 +16,8 @@ const CATEGORIAS = {
   quedada:    { label:'Quedada',    emoji:'👥', color:'#7c3aed', bg:'#ede9fe' },
 }
 
-const todayISO = () => new Date().toISOString().split('T')[0]
+const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+const todayISO = () => toISO(new Date())
 const fmtShort = d => { if(!d)return''; const dt=new Date(d+'T12:00:00'); return `${dt.getDate()} ${MESES[dt.getMonth()]}` }
 const fmtFull  = d => { if(!d)return''; const dt=new Date(d+'T12:00:00'); return `${dt.getDate()} de ${MESES[dt.getMonth()]} de ${dt.getFullYear()}` }
 
@@ -191,7 +192,7 @@ function CalendarioView({ data, T, setModal }) {
   const nextMes = () => { if(mes===11){ setMes(0); setAnio(a=>a+1) } else setMes(m=>m+1) }
 
   const eventosDelDia = d => {
-    const iso = d.toISOString().split('T')[0]
+    const iso = toISO(d)
     const evts = data.eventos.filter(e => e.date===iso)
     const qs   = data.quedadas.filter(q => q.date===iso)
     return [...evts.map(e=>({...e,_tipo:'evento'})), ...qs.map(q=>({...q,_tipo:'quedada',categoria:'quedada'}))]
@@ -234,7 +235,7 @@ function CalendarioView({ data, T, setModal }) {
         {/* Grid de días */}
         <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2 }}>
           {celdas.map((d,i) => {
-            const iso = d.toISOString().split('T')[0]
+            const iso = toISO(d)
             const esMes = d.getMonth()===mes
             const esHoy = iso===T
             const esSel = iso===diaSelecISO
@@ -475,7 +476,7 @@ function MenuView({ data, T, setMeal }) {
   const getWeek = off => {
     const now=new Date(); const dow=now.getDay(); const diff=dow===0?-6:1-dow
     const mon=new Date(now); mon.setDate(now.getDate()+diff+off*7)
-    return Array.from({length:7},(_,i) => { const d=new Date(mon); d.setDate(mon.getDate()+i); return d.toISOString().split('T')[0] })
+    return Array.from({length:7},(_,i) => { const d=new Date(mon); d.setDate(mon.getDate()+i); return toISO(d) })
   }
   const dates = getWeek(wOff)
   const startEdit = (date,meal) => { setEditing({date,meal}); setEditVal(data.menu[date]?.[meal]||'') }
