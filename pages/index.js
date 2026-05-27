@@ -18,6 +18,17 @@ const CATEGORIAS = {
 
 const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 const todayISO = () => toISO(new Date())
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
+  return isMobile
+}
 const fmtShort = d => { if(!d)return''; const dt=new Date(d+'T12:00:00'); return `${dt.getDate()} ${MESES[dt.getMonth()]}` }
 const fmtFull  = d => { if(!d)return''; const dt=new Date(d+'T12:00:00'); return `${dt.getDate()} de ${MESES[dt.getMonth()]} de ${dt.getFullYear()}` }
 
@@ -31,6 +42,7 @@ export default function Home() {
   const [modal, setModal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const isMobile = useIsMobile()
 
   useEffect(() => { cargarTodo() }, [])
 
@@ -120,32 +132,56 @@ export default function Home() {
     <>
       <Head><title>Mi Planner 🌿</title><meta name="viewport" content="width=device-width, initial-scale=1"/></Head>
       <div style={{ display:'flex', minHeight:'100vh' }}>
-        <aside style={{ width:200, background:G[600], display:'flex', flexDirection:'column', flexShrink:0 }}>
-          <div style={{ padding:'1.5rem 1.25rem 1rem', borderBottom:`1px solid ${G[800]}60` }}>
-            <div style={{ color:G[50], fontSize:18, fontWeight:600 }}>🌿 Mi Planner</div>
-            <div style={{ color:G[200], fontSize:12, marginTop:4 }}>{fmtFull(T)}</div>
-          </div>
-          <nav style={{ flex:1, paddingTop:8 }}>
-            {NAV.map(n => (
-              <button key={n.id} onClick={() => { setView(n.id); setModal(null) }} style={{
-                display:'flex', alignItems:'center', gap:10, width:'100%',
-                padding:'0.65rem 1.25rem', border:'none', cursor:'pointer', textAlign:'left',
-                background: view===n.id ? G[800] : 'transparent',
-                color: view===n.id ? G[50] : G[100], fontSize:14, fontFamily:'inherit',
-                borderLeft: view===n.id ? `4px solid ${G[100]}` : '4px solid transparent',
-              }}>
-                <span style={{ fontSize:16 }}>{n.emoji}</span>{n.label}
-              </button>
-            ))}
-          </nav>
-          <div style={{ padding:'1rem', fontSize:11, color:G[400], textAlign:'center', borderTop:`1px solid ${G[800]}50` }}>
-            Tu día, a tu ritmo ✨
-          </div>
-        </aside>
 
-        <main style={{ flex:1, padding:'2rem', background:'#f0f7ea', overflowY:'auto' }}>
-          {view==='hoy'        && <HoyView        data={data} T={T} addTask={addTask} toggleTask={toggleTask} deleteTask={deleteTask} setModal={setModal}/>}
-          {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal}/>}
+        {/* SIDEBAR — solo desktop */}
+        {!isMobile && (
+          <aside style={{ width:200, background:G[600], display:'flex', flexDirection:'column', flexShrink:0 }}>
+            <div style={{ padding:'1.5rem 1.25rem 1rem', borderBottom:`1px solid ${G[800]}60` }}>
+              <div style={{ color:G[50], fontSize:18, fontWeight:600 }}>🌿 Mi Planner</div>
+              <div style={{ color:G[200], fontSize:12, marginTop:4 }}>{fmtFull(T)}</div>
+            </div>
+            <nav style={{ flex:1, paddingTop:8 }}>
+              {NAV.map(n => (
+                <button key={n.id} onClick={() => { setView(n.id); setModal(null) }} style={{
+                  display:'flex', alignItems:'center', gap:10, width:'100%',
+                  padding:'0.65rem 1.25rem', border:'none', cursor:'pointer', textAlign:'left',
+                  background: view===n.id ? G[800] : 'transparent',
+                  color: view===n.id ? G[50] : G[100], fontSize:14, fontFamily:'inherit',
+                  borderLeft: view===n.id ? `4px solid ${G[100]}` : '4px solid transparent',
+                }}>
+                  <span style={{ fontSize:16 }}>{n.emoji}</span>{n.label}
+                </button>
+              ))}
+            </nav>
+            <div style={{ padding:'1rem', fontSize:11, color:G[400], textAlign:'center', borderTop:`1px solid ${G[800]}50` }}>
+              Tu día, a tu ritmo ✨
+            </div>
+          </aside>
+        )}
+
+        {/* CONTENIDO PRINCIPAL */}
+        <main style={{
+          flex:1,
+          padding: isMobile ? '1rem' : '2rem',
+          background:'#f0f7ea',
+          overflowY:'auto',
+          paddingBottom: isMobile ? '80px' : '2rem'
+        }}>
+          {/* Header mobile */}
+          {isMobile && (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1rem', paddingBottom:'0.75rem', borderBottom:`1px solid ${G[100]}` }}>
+              <div>
+                <div style={{ fontSize:16, fontWeight:600, color:G[800] }}>🌿 Mi Planner</div>
+                <div style={{ fontSize:11, color:G[400] }}>{fmtFull(T)}</div>
+              </div>
+              <div style={{ fontSize:14, fontWeight:500, color:G[600] }}>
+                {NAV.find(n => n.id===view)?.emoji} {NAV.find(n => n.id===view)?.label}
+              </div>
+            </div>
+          )}
+
+          {view==='hoy'        && <HoyView        data={data} T={T} addTask={addTask} toggleTask={toggleTask} deleteTask={deleteTask} setModal={setModal} isMobile={isMobile}/>}
+          {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal} isMobile={isMobile}/>}
           {view==='bloodbowl'  && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="bloodbowl"/>}
           {view==='futbol'     && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="futbol"/>}
           {view==='quedadas'   && <QuedadasView    data={data} T={T} setModal={setModal} deleteQuedada={deleteQuedada} cycleStatus={cycleStatus}/>}
@@ -153,12 +189,36 @@ export default function Home() {
         </main>
       </div>
 
+      {/* BOTTOM NAV — solo mobile */}
+      {isMobile && (
+        <nav style={{
+          position:'fixed', bottom:0, left:0, right:0,
+          background:G[600], display:'flex',
+          borderTop:`2px solid ${G[800]}`, zIndex:200
+        }}>
+          {NAV.map(n => (
+            <button key={n.id} onClick={() => { setView(n.id); setModal(null) }} style={{
+              flex:1, padding:'8px 2px 10px', border:'none', cursor:'pointer',
+              background: view===n.id ? G[800] : 'transparent',
+              display:'flex', flexDirection:'column', alignItems:'center', gap:2,
+              borderTop: view===n.id ? `2px solid ${G[100]}` : '2px solid transparent',
+              fontFamily:'inherit'
+            }}>
+              <span style={{ fontSize:18 }}>{n.emoji}</span>
+              <span style={{ fontSize:9, color: view===n.id ? G[50] : G[200], fontWeight: view===n.id ? 600 : 400 }}>{n.label}</span>
+            </button>
+          ))}
+        </nav>
+      )}
+
+      {/* MODAL */}
       {modal && (
         <div onClick={e => e.target===e.currentTarget && setModal(null)} style={{
           position:'fixed', inset:0, background:'rgba(0,0,0,0.5)',
-          display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000
+          display:'flex', alignItems: isMobile ? 'flex-end' : 'center',
+          justifyContent:'center', zIndex:1000
         }}>
-          <FormModal modal={modal} close={() => setModal(null)} saveEvento={saveEvento} saveQuedada={saveQuedada}/>
+          <FormModal modal={modal} close={() => setModal(null)} saveEvento={saveEvento} saveQuedada={saveQuedada} isMobile={isMobile}/>
         </div>
       )}
     </>
@@ -168,7 +228,7 @@ export default function Home() {
 // ═══════════════════════════════════════════════════════════════════
 // CALENDARIO MENSUAL
 // ═══════════════════════════════════════════════════════════════════
-function CalendarioView({ data, T, setModal }) {
+function CalendarioView({ data, T, setModal, isMobile }) {
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -241,12 +301,12 @@ function CalendarioView({ data, T, setModal }) {
             const evts  = eventosDelDia(d)
             return (
               <div key={i} onClick={() => setDiaSelec(iso)} style={{
-                minHeight:64, padding:'6px 4px', borderRadius:8, cursor:'pointer',
+                minHeight: isMobile ? 44 : 64, padding: isMobile ? '4px 2px' : '6px 4px', borderRadius:8, cursor:'pointer',
                 background: esSel ? G[600] : esHoy ? G[50] : 'transparent',
                 border: esHoy && !esSel ? `2px solid ${G[400]}` : '2px solid transparent',
                 opacity: esMes ? 1 : 0.3,
               }}>
-                <div style={{ fontSize:14, fontWeight:esHoy?700:400, color:esSel?'white':esHoy?G[600]:G[800], marginBottom:4, textAlign:'center' }}>
+                <div style={{ fontSize: isMobile ? 12 : 14, fontWeight:esHoy?700:400, color:esSel?'white':esHoy?G[600]:G[800], marginBottom:4, textAlign:'center' }}>
                   {d.getDate()}
                 </div>
                 <div style={{ display:'flex', flexWrap:'wrap', gap:2, justifyContent:'center' }}>
@@ -350,7 +410,7 @@ function EventoCard({ e, past, onEdit, onDel }) {
 // ═══════════════════════════════════════════════════════════════════
 // VISTA: HOY
 // ═══════════════════════════════════════════════════════════════════
-function HoyView({ data, T, addTask, toggleTask, deleteTask, setModal }) {
+function HoyView({ data, T, addTask, toggleTask, deleteTask, setModal, isMobile }) {
   const [newTask, setNewTask] = useState('')
   const dow = new Date().getDay()
   const dayName = DIAS_L[dow===0?6:dow-1]
@@ -366,7 +426,7 @@ function HoyView({ data, T, addTask, toggleTask, deleteTask, setModal }) {
         <h1 style={{ fontSize:26, fontWeight:600, color:G[800] }}>{dayName}, {fmtFull(T)}</h1>
         <p style={{ color:G[400], fontSize:14, marginTop:4 }}>{todayTasks.filter(t=>!t.done).length} tareas · {todayEvents.length+todayQ.length} eventos</p>
       </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:12, marginBottom:'1.5rem' }}>
+      <div style={{ display:'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(3,1fr)', gap:12, marginBottom:'1.5rem' }}>
         {[
           { l:'Tareas pendientes', v:todayTasks.filter(t=>!t.done).length },
           { l:'Eventos hoy',       v:todayEvents.length+todayQ.length },
@@ -545,7 +605,7 @@ function MenuView({ data, T, setMeal }) {
 // ═══════════════════════════════════════════════════════════════════
 // MODAL FORMULARIO
 // ═══════════════════════════════════════════════════════════════════
-function FormModal({ modal, close, saveEvento, saveQuedada }) {
+function FormModal({ modal, close, saveEvento, saveQuedada, isMobile }) {
   const isEdit=!!modal.edit, isEvento=modal.type==='evento', T=todayISO()
   const [form, setForm] = useState(
     modal.edit ? {...modal.edit} : {
@@ -570,7 +630,7 @@ function FormModal({ modal, close, saveEvento, saveQuedada }) {
     close()
   }
   return (
-    <div style={{ background:'white',borderRadius:16,padding:'1.5rem',width:420,maxWidth:'95vw',border:`1px solid ${G[200]}`,maxHeight:'90vh',overflowY:'auto' }}>
+    <div style={{ background:'white', borderRadius: isMobile ? '16px 16px 0 0' : 16, padding:'1.5rem', width: isMobile ? '100%' : 420, maxWidth: isMobile ? '100%' : '95vw', border:`1px solid ${G[200]}`, maxHeight:'90vh', overflowY:'auto' }}>
       <div style={{ display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.25rem' }}>
         <h2 style={{ fontSize:18,fontWeight:600,color:G[800] }}>{isEdit?'Editar':'Nuevo'} {isEvento?'evento':'quedada'}</h2>
         <button onClick={close} style={{ border:'none',background:'none',cursor:'pointer',fontSize:22,color:G[400],lineHeight:1 }}>×</button>
