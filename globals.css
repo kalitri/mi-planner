@@ -1,0 +1,34 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f0f7ea;
+  color: #27500A;
+  min-height: 100vh;
+}
+
+/* Inputs y selects con estilo verde */
+input, select, textarea {
+  font-family: inherit;
+  font-size: 14px;
+  border: 1px solid #97C459;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: white;
+  color: #27500A;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: #3B6D11;
+  box-shadow: 0 0 0 3px rgba(99,153,34,0.15);
+}
+
+/* Scrollbar verde suave */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #EAF3DE; }
+::-webkit-scrollbar-thumb { background: #97C459; border-radius: 3px; }
