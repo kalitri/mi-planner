@@ -40,7 +40,7 @@ const btnSecondary = { background:'white', color:G[600], border:`1px solid ${G[2
 export default function Home() {
   const { user } = useAuth()
   const [view, setView] = useState('hoy')
-  const [data, setData] = useState({ tareas:[], eventos:[], quedadas:[], menu:{} })
+  const [data, setData] = useState({ tareas:[], eventos:[], quedadas:[], menu:{}, checks:{} })
   const [modal, setModal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -51,15 +51,18 @@ export default function Home() {
   const cargarTodo = async () => {
     try {
       setLoading(true)
-      const [t,e,q,m] = await Promise.all([
+      const [t,e,q,m,c] = await Promise.all([
         supabase.from('tareas').select('*').eq('user_id', user.id).order('created_at'),
         supabase.from('eventos').select('*').eq('user_id', user.id).order('date'),
         supabase.from('quedadas').select('*').eq('user_id', user.id).order('date'),
         supabase.from('menu').select('*').eq('user_id', user.id),
+        supabase.from('daily_checks').select('*').eq('user_id', user.id),
       ])
       const menuObj = {}
       m.data?.forEach(row => { menuObj[row.date] = { Desayuno:row.desayuno||'', Almuerzo:row.almuerzo||'', Merienda:row.merienda||'', Cena:row.cena||'' } })
-      setData({ tareas:t.data||[], eventos:e.data||[], quedadas:q.data||[], menu:menuObj })
+      const checksObj = {}
+      c.data?.forEach(row => { checksObj[row.date] = { entrenamiento:!!row.entrenamiento, comida:!!row.comida, reuniones:!!row.reuniones, tareas:!!row.tareas } })
+      setData({ tareas:t.data||[], eventos:e.data||[], quedadas:q.data||[], menu:menuObj, checks:checksObj })
     } catch(err) { setError('Error al conectar con la base de datos') }
     finally { setLoading(false) }
   }
@@ -122,6 +125,11 @@ export default function Home() {
   const setMeal = async (date, comida, valor) => {
     setData(d => ({ ...d, menu:{ ...d.menu, [date]:{ ...(d.menu[date]||{}), [comida]:valor } } }))
     await supabase.from('menu').upsert({ date, user_id:user.id, [COMIDAS_COL[comida]]:valor||null }, { onConflict:'date,user_id' })
+  }
+
+  const saveCheck = async (date, campo, valor) => {
+    setData(d => ({ ...d, checks:{ ...d.checks, [date]:{ ...(d.checks[date]||{}), [campo]:valor } } }))
+    await supabase.from('daily_checks').upsert({ date, user_id:user.id, [campo]:valor }, { onConflict:'date,user_id' })
   }
 
   const handleLogout = async () => {
@@ -207,7 +215,7 @@ export default function Home() {
           )}
 
           {view==='hoy'        && <HoyView        data={data} T={T} addTask={addTask} toggleTask={toggleTask} deleteTask={deleteTask} setModal={setModal} isMobile={isMobile}/>}
-          {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal} isMobile={isMobile}/>}
+          {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal} isMobile={isMobile} saveCheck={saveCheck}/>}
           {view==='bloodbowl'  && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="bloodbowl"/>}
           {view==='futbol'     && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="futbol"/>}
           {view==='quedadas'   && <QuedadasView    data={data} T={T} setModal={setModal} deleteQuedada={deleteQuedada} cycleStatus={cycleStatus}/>}
@@ -254,7 +262,7 @@ export default function Home() {
 // ═══════════════════════════════════════════════════════════════════
 // CALENDARIO MENSUAL
 // ═══════════════════════════════════════════════════════════════════
-function CalendarioView({ data, T, setModal, isMobile }) {
+function CalendarioView({ data, T, setModal, isMobile, saveCheck }) {
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -282,85 +290,187 @@ function CalendarioView({ data, T, setModal, isMobile }) {
   const eventosSelec = eventosDelDia(new Date(diaSelec+'T12:00:00'))
 
   return (
-    <div style={{ maxWidth:900 }}>
+    <div style={{ maxWidth:1100 }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'1.5rem' }}>
         <h1 style={{ fontSize:26, fontWeight:600, color:G[800] }}>📅 Calendario</h1>
         <button onClick={() => setModal({ type:'evento' })} style={btnPrimary}>+ Nuevo evento</button>
       </div>
 
-      <div style={{ ...card, marginBottom:16 }}>
-        {/* Leyenda */}
-        <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${G[100]}` }}>
-          {Object.entries(CATEGORIAS).map(([k,v]) => (
-            <span key={k} style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12 }}>
-              <span style={{ width:10, height:10, borderRadius:'50%', background:v.color, display:'inline-block' }}/>
-              <span style={{ color:G[600] }}>{v.emoji} {v.label}</span>
-            </span>
-          ))}
-        </div>
-        {/* Navegación de mes */}
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <button onClick={prevMes} style={{ ...btnSecondary, padding:'6px 14px' }}>◀</button>
-          <span style={{ fontSize:20, fontWeight:600, color:G[800] }}>{MESES[mes]} {anio}</span>
-          <button onClick={nextMes} style={{ ...btnSecondary, padding:'6px 14px' }}>▶</button>
-        </div>
-        {/* Cabecera días */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, marginBottom:4 }}>
-          {DIAS_C.map(d => (
-            <div key={d} style={{ textAlign:'center', fontSize:12, fontWeight:600, color:G[400], padding:'4px 0' }}>{d}</div>
-          ))}
-        </div>
-        {/* Grid de días */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2 }}>
-          {celdas.map((d,i) => {
-            const iso = toISO(d)
-            const esMes = d.getMonth()===mes
-            const esHoy = iso===T
-            const esSel = iso===diaSelec
-            const evts  = eventosDelDia(d)
-            return (
-              <div key={i} onClick={() => setDiaSelec(iso)} style={{
-                minHeight: isMobile ? 44 : 64, padding: isMobile ? '4px 2px' : '6px 4px', borderRadius:8, cursor:'pointer',
-                background: esSel ? G[600] : esHoy ? G[50] : 'transparent',
-                border: esHoy && !esSel ? `2px solid ${G[400]}` : '2px solid transparent',
-                opacity: esMes ? 1 : 0.3,
-              }}>
-                <div style={{ fontSize: isMobile ? 12 : 14, fontWeight:esHoy?700:400, color:esSel?'white':esHoy?G[600]:G[800], marginBottom:4, textAlign:'center' }}>
-                  {d.getDate()}
-                </div>
-                <div style={{ display:'flex', flexWrap:'wrap', gap:2, justifyContent:'center' }}>
-                  {evts.slice(0,3).map((e,j) => {
-                    const cat = CATEGORIAS[e.categoria||'general'] || CATEGORIAS.general
-                    return <div key={j} style={{ width:8, height:8, borderRadius:'50%', background:esSel?'white':cat.color }}/>
-                  })}
-                  {evts.length>3 && <div style={{ fontSize:9, color:esSel?'white':G[400] }}>+{evts.length-3}</div>}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      <div style={{ display:'flex', gap:16, alignItems:'flex-start', flexDirection: isMobile ? 'column' : 'row' }}>
 
-      {/* Panel del día seleccionado */}
-      <div style={card}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-          <div style={{ fontSize:15, fontWeight:600, color:G[800] }}>{fmtFull(diaSelec)}</div>
-          <button onClick={() => setModal({ type:'evento', defaultDate:diaSelec })} style={{ ...btnPrimary, padding:'6px 12px', fontSize:13 }}>+ Añadir</button>
-        </div>
-        {eventosSelec.length===0 && <Muted>Sin eventos este día</Muted>}
-        {eventosSelec.map(e => {
-          const cat = CATEGORIAS[e.categoria||'general'] || CATEGORIAS.general
-          return (
-            <div key={e.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 10px', borderRadius:8, marginBottom:6, background:cat.bg, border:`1px solid ${cat.color}30` }}>
-              <span style={{ fontSize:18 }}>{cat.emoji}</span>
-              <div style={{ flex:1 }}>
-                <div style={{ fontSize:14, fontWeight:500, color:G[800] }}>{e.title}</div>
-                <div style={{ fontSize:12, color:G[400] }}>{e.time && `🕐 ${e.time}`}{e.place && ` · 📍 ${e.place}`}</div>
-              </div>
+        {/* Columna izquierda: grid del calendario */}
+        <div style={{ flex:'1 1 0', minWidth:0, width: isMobile ? '100%' : undefined }}>
+          <div style={card}>
+            {/* Leyenda */}
+            <div style={{ display:'flex', gap:12, flexWrap:'wrap', marginBottom:14, paddingBottom:12, borderBottom:`1px solid ${G[100]}` }}>
+              {Object.entries(CATEGORIAS).map(([k,v]) => (
+                <span key={k} style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12 }}>
+                  <span style={{ width:10, height:10, borderRadius:'50%', background:v.color, display:'inline-block' }}/>
+                  <span style={{ color:G[600] }}>{v.emoji} {v.label}</span>
+                </span>
+              ))}
             </div>
-          )
-        })}
+            {/* Navegación de mes */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+              <button onClick={prevMes} style={{ ...btnSecondary, padding:'6px 14px' }}>◀</button>
+              <span style={{ fontSize:20, fontWeight:600, color:G[800] }}>{MESES[mes]} {anio}</span>
+              <button onClick={nextMes} style={{ ...btnSecondary, padding:'6px 14px' }}>▶</button>
+            </div>
+            {/* Cabecera días */}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, marginBottom:4 }}>
+              {DIAS_C.map(d => (
+                <div key={d} style={{ textAlign:'center', fontSize:12, fontWeight:600, color:G[400], padding:'4px 0' }}>{d}</div>
+              ))}
+            </div>
+            {/* Grid de días */}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2 }}>
+              {celdas.map((d,i) => {
+                const iso = toISO(d)
+                const esMes = d.getMonth()===mes
+                const esHoy = iso===T
+                const esSel = iso===diaSelec
+                const evts  = eventosDelDia(d)
+                const totalCheck = Object.values(data.checks[iso]||{}).filter(Boolean).length
+                return (
+                  <div key={i} onClick={() => setDiaSelec(iso)} style={{
+                    minHeight: isMobile ? 44 : 68, padding: isMobile ? '4px 2px' : '6px 4px', borderRadius:8, cursor:'pointer',
+                    background: esSel ? G[600] : esHoy ? G[50] : 'transparent',
+                    border: esHoy && !esSel ? `2px solid ${G[400]}` : '2px solid transparent',
+                    opacity: esMes ? 1 : 0.3,
+                  }}>
+                    <div style={{ fontSize: isMobile ? 12 : 14, fontWeight:esHoy?700:400, color:esSel?'white':esHoy?G[600]:G[800], marginBottom:3, textAlign:'center' }}>
+                      {d.getDate()}
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:2, justifyContent:'center' }}>
+                      {evts.slice(0,3).map((e,j) => {
+                        const cat = CATEGORIAS[e.categoria||'general'] || CATEGORIAS.general
+                        return <div key={j} style={{ width:7, height:7, borderRadius:'50%', background:esSel?'white':cat.color }}/>
+                      })}
+                      {evts.length>3 && <div style={{ fontSize:9, color:esSel?'white':G[400] }}>+{evts.length-3}</div>}
+                    </div>
+                    {totalCheck>0 && (
+                      <div style={{ textAlign:'center', marginTop:3 }}>
+                        <span style={{ fontSize:9, fontWeight:600, color:esSel?G[100]:G[400] }}>{totalCheck}/4</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Columna derecha: eventos del día + resumen */}
+        <div style={{ flex:'0 0 272px', width: isMobile ? '100%' : 272 }}>
+
+          {/* Panel eventos del día seleccionado */}
+          <div style={card}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+              <div style={{ fontSize:14, fontWeight:600, color:G[800] }}>{fmtFull(diaSelec)}</div>
+              <button onClick={() => setModal({ type:'evento', defaultDate:diaSelec })} style={{ ...btnPrimary, padding:'5px 10px', fontSize:12 }}>+ Añadir</button>
+            </div>
+            {eventosSelec.length===0 && <Muted>Sin eventos este día</Muted>}
+            {eventosSelec.map(e => {
+              const cat = CATEGORIAS[e.categoria||'general'] || CATEGORIAS.general
+              return (
+                <div key={e.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', borderRadius:8, marginBottom:5, background:cat.bg, border:`1px solid ${cat.color}25` }}>
+                  <span style={{ fontSize:16, flexShrink:0 }}>{cat.emoji}</span>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:500, color:G[800], overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.title}</div>
+                    <div style={{ fontSize:11, color:G[400] }}>{e.time && `🕐 ${e.time}`}{e.place && ` · 📍 ${e.place}`}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Resumen del día */}
+          <ResumenDia
+            date={diaSelec}
+            checks={data.checks}
+            saveCheck={saveCheck}
+            eventos={data.eventos}
+            tareas={data.tareas}
+          />
+        </div>
       </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RESUMEN DEL DÍA (panel lateral del calendario)
+// ═══════════════════════════════════════════════════════════════════
+function ResumenDia({ date, checks, saveCheck, eventos, tareas }) {
+  const check = checks[date] || {}
+  const evtsDia  = eventos.filter(e => e.date===date)
+  const tareasDia = tareas.filter(t => t.date===date)
+  const tareasHechas = tareasDia.filter(t => t.done).length
+  const totalHecho = ['entrenamiento','comida','reuniones','tareas'].filter(k => check[k]).length
+
+  const ITEMS = [
+    { key:'entrenamiento', icon:'🏃', label:'Entrenamiento',       sub:null },
+    { key:'comida',        icon:'🥗', label:'Comida según menú',   sub:null },
+    {
+      key:'reuniones', icon:'📅', label:'Reuniones del día',
+      sub: evtsDia.length>0 ? `${evtsDia.length} evento${evtsDia.length>1?'s':''}` : 'Sin eventos',
+    },
+    {
+      key:'tareas', icon:'✅', label:'Tareas completadas',
+      sub: tareasDia.length>0 ? `${tareasHechas}/${tareasDia.length} hecha${tareasHechas!==1?'s':''}` : 'Sin tareas hoy',
+    },
+  ]
+
+  return (
+    <div style={{ ...card, marginTop:12 }}>
+      {/* Cabecera con progreso */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+        <div style={{ fontSize:13, fontWeight:600, color:G[400], textTransform:'uppercase', letterSpacing:'0.06em' }}>📋 Resumen</div>
+        <div style={{ fontSize:12, fontWeight:700, color: totalHecho===4 ? G[600] : G[400] }}>{totalHecho}/4</div>
+      </div>
+      {/* Barra de progreso */}
+      <div style={{ height:5, background:G[100], borderRadius:3, marginBottom:14, overflow:'hidden' }}>
+        <div style={{
+          height:'100%', borderRadius:3,
+          background: totalHecho===4 ? G[600] : totalHecho>=2 ? G[400] : G[200],
+          width:`${(totalHecho/4)*100}%`,
+          transition:'width 0.25s ease',
+        }}/>
+      </div>
+      {/* Checkboxes */}
+      {ITEMS.map(item => {
+        const done = !!check[item.key]
+        return (
+          <div key={item.key} onClick={() => saveCheck(date, item.key, !done)} style={{
+            display:'flex', alignItems:'center', gap:10, padding:'8px 8px',
+            borderRadius:8, cursor:'pointer', marginBottom:4,
+            background: done ? G[50] : 'transparent',
+            border: `1px solid ${done ? G[100] : 'transparent'}`,
+            userSelect:'none',
+          }}>
+            {/* Checkbox visual */}
+            <div style={{
+              width:20, height:20, borderRadius:5, flexShrink:0,
+              border:`2px solid ${done ? G[400] : G[200]}`,
+              background: done ? G[400] : 'white',
+              display:'flex', alignItems:'center', justifyContent:'center',
+              transition:'all 0.15s',
+            }}>
+              {done && <span style={{ color:'white', fontSize:11, fontWeight:800, lineHeight:1 }}>✓</span>}
+            </div>
+            <span style={{ fontSize:15, flexShrink:0 }}>{item.icon}</span>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:500, color: done ? G[600] : G[800], lineHeight:1.3 }}>{item.label}</div>
+              {item.sub && <div style={{ fontSize:11, color:G[400], marginTop:1 }}>{item.sub}</div>}
+            </div>
+          </div>
+        )
+      })}
+      {totalHecho===4 && (
+        <div style={{ textAlign:'center', marginTop:10, fontSize:13, color:G[600], fontWeight:500 }}>
+          🎉 ¡Día completado!
+        </div>
+      )}
     </div>
   )
 }
