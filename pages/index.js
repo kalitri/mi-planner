@@ -98,6 +98,10 @@ export default function Home() {
     await supabase.from('dv_events').delete().eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, eventos:d.eventos.filter(e => e.id!==id) }))
   }
+  const toggleEvento = async (id, completed) => {
+    await supabase.from('dv_events').update({ completed:!completed }).eq('id',id).eq('user_id',user.id)
+    setData(d => ({ ...d, eventos:d.eventos.map(e => e.id===id ? {...e, completed:!completed} : e) }))
+  }
 
   const saveQuedada = async (form) => {
     const uid = user?.id
@@ -215,7 +219,7 @@ export default function Home() {
           )}
 
           {view==='hoy'        && <HoyView        data={data} T={T} addTask={addTask} toggleTask={toggleTask} deleteTask={deleteTask} setModal={setModal} isMobile={isMobile}/>}
-          {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal} isMobile={isMobile} saveCheck={saveCheck}/>}
+          {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal} isMobile={isMobile} saveCheck={saveCheck} toggleEvento={toggleEvento}/>}
           {view==='bloodbowl'  && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="bloodbowl"/>}
           {view==='futbol'     && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="futbol"/>}
           {view==='quedadas'   && <QuedadasView    data={data} T={T} setModal={setModal} deleteQuedada={deleteQuedada} cycleStatus={cycleStatus}/>}
@@ -262,7 +266,7 @@ export default function Home() {
 // ═══════════════════════════════════════════════════════════════════
 // CALENDARIO MENSUAL
 // ═══════════════════════════════════════════════════════════════════
-function CalendarioView({ data, T, setModal, isMobile, saveCheck }) {
+function CalendarioView({ data, T, setModal, isMobile, saveCheck, toggleEvento }) {
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -372,11 +376,22 @@ function CalendarioView({ data, T, setModal, isMobile, saveCheck }) {
             {eventosSelec.length===0 && <Muted>Sin eventos este día</Muted>}
             {eventosSelec.map(e => {
               const cat = CATEGORIAS[e.categoria||'general'] || CATEGORIAS.general
+              const done = !!e.completed
               return (
-                <div key={e.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', borderRadius:8, marginBottom:5, background:cat.bg, border:`1px solid ${cat.color}25` }}>
+                <div key={e.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', borderRadius:8, marginBottom:5, background:cat.bg, border:`1px solid ${cat.color}25`, opacity: done ? 0.5 : 1, transition:'opacity 0.2s' }}>
+                  {e._tipo==='evento' ? (
+                    <button
+                      onClick={ev => { ev.stopPropagation(); toggleEvento(e.id, done) }}
+                      style={{ width:18, height:18, borderRadius:4, flexShrink:0, border:`2px solid ${done ? G[400] : G[200]}`, background:done ? G[400] : 'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, outline:'none' }}
+                    >
+                      {done && <span style={{ color:'white', fontSize:10, fontWeight:800, lineHeight:1 }}>✓</span>}
+                    </button>
+                  ) : (
+                    <span style={{ width:18, flexShrink:0 }}/>
+                  )}
                   <span style={{ fontSize:16, flexShrink:0 }}>{cat.emoji}</span>
                   <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:13, fontWeight:500, color:G[800], overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{e.title}</div>
+                    <div style={{ fontSize:13, fontWeight:500, color:G[800], overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', textDecoration: done ? 'line-through' : 'none' }}>{e.title}</div>
                     <div style={{ fontSize:11, color:G[400] }}>{e.time && `🕐 ${e.time}`}{e.place && ` · 📍 ${e.place}`}</div>
                   </div>
                 </div>
