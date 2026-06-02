@@ -51,18 +51,15 @@ export default function Home() {
   const cargarTodo = async () => {
     try {
       setLoading(true)
-      const [t,e,q,m,c] = await Promise.all([
+      const [t,e,q,m] = await Promise.all([
         supabase.from('dv_tasks').select('*').eq('user_id', user.id).order('created_at'),
         supabase.from('dv_events').select('*').eq('user_id', user.id).order('date'),
-        supabase.from('dv_habits').select('*').eq('user_id', user.id).order('date'),
+        supabase.from('dv_habits').select('*').eq('user_id', user.id).order('created_at'),
         supabase.from('dv_meals').select('*').eq('user_id', user.id),
-        supabase.from('dv_habit_checks').select('*').eq('user_id', user.id),
       ])
       const menuObj = {}
       m.data?.forEach(row => { menuObj[row.date] = { Desayuno:row.desayuno||'', Almuerzo:row.almuerzo||'', Merienda:row.merienda||'', Cena:row.cena||'' } })
-      const checksObj = {}
-      c.data?.forEach(row => { checksObj[row.date] = { entrenamiento:!!row.entrenamiento, comida:!!row.comida, reuniones:!!row.reuniones, tareas:!!row.tareas } })
-      setData({ tareas:t.data||[], eventos:e.data||[], quedadas:q.data||[], menu:menuObj, checks:checksObj })
+      setData({ tareas:t.data||[], eventos:(e.data||[]).map(ev => ({...ev, categoria:ev.type||'general'})), quedadas:q.data||[], menu:menuObj, checks:{} })
     } catch(err) { setError('Error al conectar con la base de datos') }
     finally { setLoading(false) }
   }
@@ -85,13 +82,19 @@ export default function Home() {
   const saveEvento = async (form) => {
     const uid = user?.id
     if(!uid) return
+    const dbFields = {
+      title: form.title,
+      date: form.date,
+      time: form.time || null,
+      place: form.place || null,
+      type: form.categoria || 'general',
+    }
     if(form.id) {
-      const { id, ...fields } = form
-      const { data:updated } = await supabase.from('dv_events').update({ ...fields, user_id:uid }).eq('id',id).eq('user_id',uid).select().single()
-      if(updated) setData(d => ({ ...d, eventos:d.eventos.map(e => e.id===id ? updated : e) }))
+      const { data:updated } = await supabase.from('dv_events').update({ ...dbFields, user_id:uid }).eq('id',form.id).eq('user_id',uid).select().single()
+      if(updated) setData(d => ({ ...d, eventos:d.eventos.map(e => e.id===form.id ? {...updated, categoria:updated.type||'general'} : e) }))
     } else {
-      const { data:nuevo } = await supabase.from('dv_events').insert({ ...form, user_id:uid }).select().single()
-      if(nuevo) setData(d => ({ ...d, eventos:[...d.eventos, nuevo] }))
+      const { data:nuevo } = await supabase.from('dv_events').insert({ ...dbFields, user_id:uid }).select().single()
+      if(nuevo) setData(d => ({ ...d, eventos:[...d.eventos, {...nuevo, categoria:nuevo.type||'general'}] }))
     }
   }
   const deleteEvento = async (id) => {
@@ -107,22 +110,20 @@ export default function Home() {
     const uid = user?.id
     if(!uid) return
     if(form.id) {
-      const { id, ...fields } = form
-      const { data:updated } = await supabase.from('dv_habits').update({ ...fields, user_id:uid }).eq('id',id).eq('user_id',uid).select().single()
-      if(updated) setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===id ? updated : q) }))
+      const { data:updated } = await supabase.from('dv_habits').update({ title:form.title }).eq('id',form.id).eq('user_id',uid).select().single()
+      if(updated) setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===form.id ? {...q, ...form, ...updated} : q) }))
     } else {
-      const { data:nueva } = await supabase.from('dv_habits').insert({ ...form, user_id:uid }).select().single()
-      if(nueva) setData(d => ({ ...d, quedadas:[...d.quedadas, nueva] }))
+      const { data:nueva } = await supabase.from('dv_habits').insert({ title:form.title, user_id:uid }).select().single()
+      if(nueva) setData(d => ({ ...d, quedadas:[...d.quedadas, {...form, ...nueva}] }))
     }
   }
   const deleteQuedada = async (id) => {
     await supabase.from('dv_habits').delete().eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, quedadas:d.quedadas.filter(q => q.id!==id) }))
   }
-  const cycleStatus = async (id, status) => {
+  const cycleStatus = (id, status) => {
     const ss=['pendiente','confirmada','cancelada']
     const next=ss[(ss.indexOf(status||'pendiente')+1)%ss.length]
-    await supabase.from('dv_habits').update({ status:next }).eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===id ? {...q,status:next} : q) }))
   }
 
@@ -131,9 +132,8 @@ export default function Home() {
     await supabase.from('dv_meals').upsert({ date, user_id:user.id, [COMIDAS_COL[comida]]:valor||null }, { onConflict:'date,user_id' })
   }
 
-  const saveCheck = async (date, campo, valor) => {
+  const saveCheck = (date, campo, valor) => {
     setData(d => ({ ...d, checks:{ ...d.checks, [date]:{ ...(d.checks[date]||{}), [campo]:valor } } }))
-    await supabase.from('dv_habit_checks').upsert({ date, user_id:user.id, [campo]:valor }, { onConflict:'date,user_id' })
   }
 
   const handleLogout = async () => {
