@@ -65,49 +65,57 @@ export default function Home() {
   }
 
   const addTask = async (text) => {
-    const { data:nueva } = await supabase.from('tareas').insert({ text, done:false, date:todayISO(), user_id:user.id }).select().single()
+    const uid = user?.id
+    if(!uid) return
+    const { data:nueva } = await supabase.from('tareas').insert({ text, done:false, date:todayISO(), user_id:uid }).select().single()
     if(nueva) setData(d => ({ ...d, tareas:[...d.tareas, nueva] }))
   }
   const toggleTask = async (id, done) => {
-    await supabase.from('tareas').update({ done:!done }).eq('id',id)
+    await supabase.from('tareas').update({ done:!done }).eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, tareas:d.tareas.map(t => t.id===id ? {...t,done:!done} : t) }))
   }
   const deleteTask = async (id) => {
-    await supabase.from('tareas').delete().eq('id',id)
+    await supabase.from('tareas').delete().eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, tareas:d.tareas.filter(t => t.id!==id) }))
   }
 
   const saveEvento = async (form) => {
+    const uid = user?.id
+    if(!uid) return
     if(form.id) {
-      const { data:updated } = await supabase.from('eventos').update(form).eq('id',form.id).select().single()
-      if(updated) setData(d => ({ ...d, eventos:d.eventos.map(e => e.id===form.id ? updated : e) }))
+      const { id, ...fields } = form
+      const { data:updated } = await supabase.from('eventos').update({ ...fields, user_id:uid }).eq('id',id).eq('user_id',uid).select().single()
+      if(updated) setData(d => ({ ...d, eventos:d.eventos.map(e => e.id===id ? updated : e) }))
     } else {
-      const { data:nuevo } = await supabase.from('eventos').insert({ ...form, user_id:user.id }).select().single()
+      const { data:nuevo } = await supabase.from('eventos').insert({ ...form, user_id:uid }).select().single()
       if(nuevo) setData(d => ({ ...d, eventos:[...d.eventos, nuevo] }))
     }
   }
   const deleteEvento = async (id) => {
-    await supabase.from('eventos').delete().eq('id',id)
+    await supabase.from('eventos').delete().eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, eventos:d.eventos.filter(e => e.id!==id) }))
   }
 
   const saveQuedada = async (form) => {
+    const uid = user?.id
+    if(!uid) return
     if(form.id) {
-      const { data:updated } = await supabase.from('quedadas').update(form).eq('id',form.id).select().single()
-      if(updated) setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===form.id ? updated : q) }))
+      const { id, ...fields } = form
+      const { data:updated } = await supabase.from('quedadas').update({ ...fields, user_id:uid }).eq('id',id).eq('user_id',uid).select().single()
+      if(updated) setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===id ? updated : q) }))
     } else {
-      const { data:nueva } = await supabase.from('quedadas').insert({ ...form, user_id:user.id }).select().single()
+      const { data:nueva } = await supabase.from('quedadas').insert({ ...form, user_id:uid }).select().single()
       if(nueva) setData(d => ({ ...d, quedadas:[...d.quedadas, nueva] }))
     }
   }
   const deleteQuedada = async (id) => {
-    await supabase.from('quedadas').delete().eq('id',id)
+    await supabase.from('quedadas').delete().eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, quedadas:d.quedadas.filter(q => q.id!==id) }))
   }
   const cycleStatus = async (id, status) => {
     const ss=['pendiente','confirmada','cancelada']
     const next=ss[(ss.indexOf(status||'pendiente')+1)%ss.length]
-    await supabase.from('quedadas').update({ status:next }).eq('id',id)
+    await supabase.from('quedadas').update({ status:next }).eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===id ? {...q,status:next} : q) }))
   }
 
