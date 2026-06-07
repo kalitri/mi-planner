@@ -40,7 +40,7 @@ const btnSecondary = { background:'white', color:G[600], border:`1px solid ${G[2
 export default function Home() {
   const { user } = useAuth()
   const [view, setView] = useState('hoy')
-  const [data, setData] = useState({ tareas:[], eventos:[], quedadas:[], menu:{}, checks:{} })
+  const [data, setData] = useState({ tareas:[], eventos:[], quedadas:[], menu:{} })
   const [modal, setModal] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -59,7 +59,7 @@ export default function Home() {
       ])
       const menuObj = {}
       m.data?.forEach(row => { menuObj[row.date] = { Desayuno:row.desayuno||'', Almuerzo:row.almuerzo||'', Merienda:row.merienda||'', Cena:row.cena||'' } })
-      setData({ tareas:t.data||[], eventos:(e.data||[]).map(ev => ({...ev, categoria:ev.type||'general'})), quedadas:q.data||[], menu:menuObj, checks:{} })
+      setData({ tareas:t.data||[], eventos:(e.data||[]).map(ev => ({...ev, categoria:ev.type||'general'})), quedadas:q.data||[], menu:menuObj })
     } catch(err) { setError('Error al conectar con la base de datos') }
     finally { setLoading(false) }
   }
@@ -88,6 +88,7 @@ export default function Home() {
       time: form.time || null,
       place: form.place || null,
       type: form.categoria || 'general',
+      notes: form.notes || null,
     }
     if(form.id) {
       const { data:updated } = await supabase.from('dv_events').update({ ...dbFields, user_id:uid }).eq('id',form.id).eq('user_id',uid).select().single()
@@ -109,12 +110,21 @@ export default function Home() {
   const saveQuedada = async (form) => {
     const uid = user?.id
     if(!uid) return
+    const dbFields = {
+      title: form.title,
+      date: form.date || null,
+      time: form.time || null,
+      place: form.place || null,
+      people: form.people || null,
+      status: form.status || 'pendiente',
+      notes: form.notes || null,
+    }
     if(form.id) {
-      const { data:updated } = await supabase.from('dv_habits').update({ title:form.title }).eq('id',form.id).eq('user_id',uid).select().single()
-      if(updated) setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===form.id ? {...q, ...form, ...updated} : q) }))
+      const { data:updated } = await supabase.from('dv_habits').update({ ...dbFields, user_id:uid }).eq('id',form.id).eq('user_id',uid).select().single()
+      if(updated) setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===form.id ? {...q, ...updated} : q) }))
     } else {
-      const { data:nueva } = await supabase.from('dv_habits').insert({ title:form.title, user_id:uid }).select().single()
-      if(nueva) setData(d => ({ ...d, quedadas:[...d.quedadas, {...form, ...nueva}] }))
+      const { data:nueva } = await supabase.from('dv_habits').insert({ ...dbFields, user_id:uid }).select().single()
+      if(nueva) setData(d => ({ ...d, quedadas:[...d.quedadas, nueva] }))
     }
   }
   const deleteQuedada = async (id) => {
@@ -130,10 +140,6 @@ export default function Home() {
   const setMeal = async (date, comida, valor) => {
     setData(d => ({ ...d, menu:{ ...d.menu, [date]:{ ...(d.menu[date]||{}), [comida]:valor } } }))
     await supabase.from('dv_meals').upsert({ date, user_id:user.id, [COMIDAS_COL[comida]]:valor||null }, { onConflict:'date,user_id' })
-  }
-
-  const saveCheck = (date, campo, valor) => {
-    setData(d => ({ ...d, checks:{ ...d.checks, [date]:{ ...(d.checks[date]||{}), [campo]:valor } } }))
   }
 
   const handleLogout = async () => {
@@ -219,7 +225,7 @@ export default function Home() {
           )}
 
           {view==='hoy'        && <HoyView        data={data} T={T} addTask={addTask} toggleTask={toggleTask} deleteTask={deleteTask} setModal={setModal} isMobile={isMobile}/>}
-          {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal} isMobile={isMobile} saveCheck={saveCheck} toggleEvento={toggleEvento}/>}
+          {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal} isMobile={isMobile} toggleEvento={toggleEvento}/>}
           {view==='bloodbowl'  && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="bloodbowl"/>}
           {view==='futbol'     && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="futbol"/>}
           {view==='quedadas'   && <QuedadasView    data={data} T={T} setModal={setModal} deleteQuedada={deleteQuedada} cycleStatus={cycleStatus}/>}
@@ -266,7 +272,7 @@ export default function Home() {
 // ═══════════════════════════════════════════════════════════════════
 // CALENDARIO MENSUAL
 // ═══════════════════════════════════════════════════════════════════
-function CalendarioView({ data, T, setModal, isMobile, saveCheck, toggleEvento }) {
+function CalendarioView({ data, T, setModal, isMobile, toggleEvento }) {
   const hoy = new Date()
   const [mes, setMes] = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
@@ -334,7 +340,6 @@ function CalendarioView({ data, T, setModal, isMobile, saveCheck, toggleEvento }
                 const esHoy = iso===T
                 const esSel = iso===diaSelec
                 const evts  = eventosDelDia(d)
-                const totalCheck = Object.values(data.checks[iso]||{}).filter(Boolean).length
                 return (
                   <div key={i} onClick={() => setDiaSelec(iso)} style={{
                     minHeight: isMobile ? 44 : 68, padding: isMobile ? '4px 2px' : '6px 4px', borderRadius:8, cursor:'pointer',
@@ -352,11 +357,6 @@ function CalendarioView({ data, T, setModal, isMobile, saveCheck, toggleEvento }
                       })}
                       {evts.length>3 && <div style={{ fontSize:9, color:esSel?'white':G[400] }}>+{evts.length-3}</div>}
                     </div>
-                    {totalCheck>0 && (
-                      <div style={{ textAlign:'center', marginTop:3 }}>
-                        <span style={{ fontSize:9, fontWeight:600, color:esSel?G[100]:G[400] }}>{totalCheck}/4</span>
-                      </div>
-                    )}
                   </div>
                 )
               })}
@@ -399,93 +399,8 @@ function CalendarioView({ data, T, setModal, isMobile, saveCheck, toggleEvento }
             })}
           </div>
 
-          {/* Resumen del día */}
-          <ResumenDia
-            date={diaSelec}
-            checks={data.checks}
-            saveCheck={saveCheck}
-            eventos={data.eventos}
-            tareas={data.tareas}
-          />
         </div>
       </div>
-    </div>
-  )
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// RESUMEN DEL DÍA (panel lateral del calendario)
-// ═══════════════════════════════════════════════════════════════════
-function ResumenDia({ date, checks, saveCheck, eventos, tareas }) {
-  const check = checks[date] || {}
-  const evtsDia  = eventos.filter(e => e.date===date)
-  const tareasDia = tareas.filter(t => t.date===date)
-  const tareasHechas = tareasDia.filter(t => t.done).length
-  const totalHecho = ['entrenamiento','comida','reuniones','tareas'].filter(k => check[k]).length
-
-  const ITEMS = [
-    { key:'entrenamiento', icon:'🏃', label:'Entrenamiento',       sub:null },
-    { key:'comida',        icon:'🥗', label:'Comida según menú',   sub:null },
-    {
-      key:'reuniones', icon:'📅', label:'Reuniones del día',
-      sub: evtsDia.length>0 ? `${evtsDia.length} evento${evtsDia.length>1?'s':''}` : 'Sin eventos',
-    },
-    {
-      key:'tareas', icon:'✅', label:'Tareas completadas',
-      sub: tareasDia.length>0 ? `${tareasHechas}/${tareasDia.length} hecha${tareasHechas!==1?'s':''}` : 'Sin tareas hoy',
-    },
-  ]
-
-  return (
-    <div style={{ ...card, marginTop:12 }}>
-      {/* Cabecera con progreso */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-        <div style={{ fontSize:13, fontWeight:600, color:G[400], textTransform:'uppercase', letterSpacing:'0.06em' }}>📋 Resumen</div>
-        <div style={{ fontSize:12, fontWeight:700, color: totalHecho===4 ? G[600] : G[400] }}>{totalHecho}/4</div>
-      </div>
-      {/* Barra de progreso */}
-      <div style={{ height:5, background:G[100], borderRadius:3, marginBottom:14, overflow:'hidden' }}>
-        <div style={{
-          height:'100%', borderRadius:3,
-          background: totalHecho===4 ? G[600] : totalHecho>=2 ? G[400] : G[200],
-          width:`${(totalHecho/4)*100}%`,
-          transition:'width 0.25s ease',
-        }}/>
-      </div>
-      {/* Checkboxes */}
-      {ITEMS.map(item => {
-        const done = !!check[item.key]
-        return (
-          <div key={item.key} onClick={() => saveCheck(date, item.key, !done)} style={{
-            display:'flex', alignItems:'center', gap:10, padding:'8px 8px',
-            borderRadius:8, cursor:'pointer', marginBottom:4,
-            background: done ? G[50] : 'transparent',
-            border: `1px solid ${done ? G[100] : 'transparent'}`,
-            userSelect:'none',
-          }}>
-            {/* Checkbox visual */}
-            <div style={{
-              width:20, height:20, borderRadius:5, flexShrink:0,
-              border:`2px solid ${done ? G[400] : G[200]}`,
-              background: done ? G[400] : 'white',
-              display:'flex', alignItems:'center', justifyContent:'center',
-              transition:'all 0.15s',
-            }}>
-              {done && <span style={{ color:'white', fontSize:11, fontWeight:800, lineHeight:1 }}>✓</span>}
-            </div>
-            <span style={{ fontSize:15, flexShrink:0 }}>{item.icon}</span>
-            <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:13, fontWeight:500, color: done ? G[600] : G[800], lineHeight:1.3 }}>{item.label}</div>
-              {item.sub && <div style={{ fontSize:11, color:G[400], marginTop:1 }}>{item.sub}</div>}
-            </div>
-          </div>
-        )
-      })}
-      {totalHecho===4 && (
-        <div style={{ textAlign:'center', marginTop:10, fontSize:13, color:G[600], fontWeight:500 }}>
-          🎉 ¡Día completado!
-        </div>
-      )}
     </div>
   )
 }
