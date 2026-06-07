@@ -20,6 +20,28 @@ const CATEGORIAS = {
 const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 const todayISO = () => toISO(new Date())
 
+const EVENTOS_RECURRENTES = [
+  { prefix:'rec-futbol-jue', title:'Futbol Rulo', dow:4, time:'20:00', categoria:'futbol' },
+  { prefix:'rec-futbol-lun', title:'Oficinastas', dow:1, time:'20:30', categoria:'futbol' },
+]
+function generarRecurrentes() {
+  const desde = new Date(); desde.setMonth(desde.getMonth() - 3)
+  const hasta = new Date(); hasta.setMonth(hasta.getMonth() + 9)
+  const hastaISO = toISO(hasta)
+  const events = []
+  for (const r of EVENTOS_RECURRENTES) {
+    const cur = new Date(desde)
+    while (toISO(cur) <= hastaISO) {
+      if (cur.getDay() === r.dow) {
+        const d = toISO(cur)
+        events.push({ id:`${r.prefix}-${d}`, title:r.title, date:d, time:r.time, categoria:r.categoria, type:r.categoria, recurrente:true })
+      }
+      cur.setDate(cur.getDate() + 1)
+    }
+  }
+  return events
+}
+
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false)
   useEffect(() => {
@@ -59,7 +81,7 @@ export default function Home() {
       ])
       const menuObj = {}
       m.data?.forEach(row => { menuObj[row.date] = { Desayuno:row.desayuno||'', Almuerzo:row.almuerzo||'', Merienda:row.merienda||'', Cena:row.cena||'' } })
-      setData({ tareas:t.data||[], eventos:(e.data||[]).map(ev => ({...ev, categoria:ev.type||'general'})), quedadas:q.data||[], menu:menuObj })
+      setData({ tareas:t.data||[], eventos:[...(e.data||[]).map(ev => ({...ev, categoria:ev.type||'general'})), ...generarRecurrentes()], quedadas:q.data||[], menu:menuObj })
     } catch(err) { setError('Error al conectar con la base de datos') }
     finally { setLoading(false) }
   }
@@ -103,6 +125,7 @@ export default function Home() {
     setData(d => ({ ...d, eventos:d.eventos.filter(e => e.id!==id) }))
   }
   const toggleEvento = async (id, completed) => {
+    if (typeof id === 'string' && id.startsWith('rec-')) return
     await supabase.from('dv_events').update({ completed:!completed }).eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, eventos:d.eventos.map(e => e.id===id ? {...e, completed:!completed} : e) }))
   }
@@ -379,7 +402,7 @@ function CalendarioView({ data, T, setModal, isMobile, toggleEvento }) {
               const done = !!e.completed
               return (
                 <div key={e.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'7px 8px', borderRadius:8, marginBottom:5, background:cat.bg, border:`1px solid ${cat.color}25`, opacity: done ? 0.5 : 1, transition:'opacity 0.2s' }}>
-                  {e._tipo==='evento' ? (
+                  {e._tipo==='evento' && !e.recurrente ? (
                     <button
                       onClick={ev => { ev.stopPropagation(); toggleEvento(e.id, done) }}
                       style={{ width:18, height:18, borderRadius:4, flexShrink:0, border:`2px solid ${done ? G[400] : G[200]}`, background:done ? G[400] : 'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', padding:0, outline:'none' }}
@@ -446,6 +469,7 @@ function EventoCard({ e, past, onEdit, onDel }) {
             <span style={{ fontSize:16 }}>{cat.emoji}</span>
             <span style={{ fontSize:15, fontWeight:600, color:G[800] }}>{e.title}</span>
             <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:cat.bg, color:cat.color, fontWeight:500 }}>{cat.label}</span>
+            {e.recurrente && <span style={{ fontSize:11, padding:'2px 8px', borderRadius:20, background:'#f0f9ff', color:'#0369a1', fontWeight:500 }}>🔁 Semanal</span>}
           </div>
           <div style={{ display:'flex', gap:14, flexWrap:'wrap', paddingLeft:24 }}>
             <Chip icon="📅">{fmtShort(e.date)}</Chip>
@@ -454,10 +478,10 @@ function EventoCard({ e, past, onEdit, onDel }) {
           </div>
           {e.notes && <div style={{ fontSize:12, color:G[400], marginTop:6, paddingLeft:24, fontStyle:'italic' }}>{e.notes}</div>}
         </div>
-        <div style={{ display:'flex', gap:4 }}>
+        {!e.recurrente && <div style={{ display:'flex', gap:4 }}>
           <IBtn onClick={onEdit}>✏️</IBtn>
           <IBtn onClick={onDel} red>🗑️</IBtn>
-        </div>
+        </div>}
       </div>
     </div>
   )
