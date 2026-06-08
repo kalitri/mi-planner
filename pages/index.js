@@ -103,7 +103,7 @@ export default function Home() {
 
   const saveEvento = async (form) => {
     const uid = user?.id
-    if(!uid) return
+    if(!uid) throw new Error('No hay sesión activa')
     const dbFields = {
       title: form.title,
       date: form.date,
@@ -113,10 +113,12 @@ export default function Home() {
       notes: form.notes || null,
     }
     if(form.id) {
-      const { data:updated } = await supabase.from('dv_events').update({ ...dbFields, user_id:uid }).eq('id',form.id).eq('user_id',uid).select().single()
+      const { data:updated, error } = await supabase.from('dv_events').update({ ...dbFields, user_id:uid }).eq('id',form.id).eq('user_id',uid).select().single()
+      if(error) throw new Error(error.message)
       if(updated) setData(d => ({ ...d, eventos:d.eventos.map(e => e.id===form.id ? {...updated, categoria:updated.type||'general'} : e) }))
     } else {
-      const { data:nuevo } = await supabase.from('dv_events').insert({ ...dbFields, user_id:uid }).select().single()
+      const { data:nuevo, error } = await supabase.from('dv_events').insert({ ...dbFields, user_id:uid }).select().single()
+      if(error) throw new Error(error.message)
       if(nuevo) setData(d => ({ ...d, eventos:[...d.eventos, {...nuevo, categoria:nuevo.type||'general'}] }))
     }
   }
@@ -132,7 +134,7 @@ export default function Home() {
 
   const saveQuedada = async (form) => {
     const uid = user?.id
-    if(!uid) return
+    if(!uid) throw new Error('No hay sesión activa')
     const dbFields = {
       title: form.title,
       date: form.date || null,
@@ -143,10 +145,12 @@ export default function Home() {
       notes: form.notes || null,
     }
     if(form.id) {
-      const { data:updated } = await supabase.from('dv_habits').update({ ...dbFields, user_id:uid }).eq('id',form.id).eq('user_id',uid).select().single()
+      const { data:updated, error } = await supabase.from('dv_habits').update({ ...dbFields, user_id:uid }).eq('id',form.id).eq('user_id',uid).select().single()
+      if(error) throw new Error(error.message)
       if(updated) setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===form.id ? {...q, ...updated} : q) }))
     } else {
-      const { data:nueva } = await supabase.from('dv_habits').insert({ ...dbFields, user_id:uid }).select().single()
+      const { data:nueva, error } = await supabase.from('dv_habits').insert({ ...dbFields, user_id:uid }).select().single()
+      if(error) throw new Error(error.message)
       if(nueva) setData(d => ({ ...d, quedadas:[...d.quedadas, nueva] }))
     }
   }
@@ -154,10 +158,11 @@ export default function Home() {
     await supabase.from('dv_habits').delete().eq('id',id).eq('user_id',user.id)
     setData(d => ({ ...d, quedadas:d.quedadas.filter(q => q.id!==id) }))
   }
-  const cycleStatus = (id, status) => {
+  const cycleStatus = async (id, status) => {
     const ss=['pendiente','confirmada','cancelada']
     const next=ss[(ss.indexOf(status||'pendiente')+1)%ss.length]
     setData(d => ({ ...d, quedadas:d.quedadas.map(q => q.id===id ? {...q,status:next} : q) }))
+    await supabase.from('dv_habits').update({ status:next }).eq('id',id).eq('user_id',user.id)
   }
 
   const setMeal = async (date, comida, valor) => {
@@ -694,20 +699,30 @@ function FormModal({ modal, close, saveEvento, saveQuedada, isMobile }) {
       categoria: modal.defaultCategoria || 'general'
     }
   )
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(null)
   const set = (k,v) => setForm(f => ({...f,[k]:v}))
   const submit = async () => {
     if(!form.title.trim()) return
-    const payload = { title:form.title, date:form.date, time:form.time||null, place:form.place||null, notes:form.notes||null }
-    if(isEvento) {
-      const ep = { ...payload, categoria:form.categoria||'general' }
-      if(form.id) ep.id=form.id
-      await saveEvento(ep)
-    } else {
-      const qp = { ...payload, people:form.people||null, status:form.status||'pendiente' }
-      if(form.id) qp.id=form.id
-      await saveQuedada(qp)
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const payload = { title:form.title, date:form.date, time:form.time||null, place:form.place||null, notes:form.notes||null }
+      if(isEvento) {
+        const ep = { ...payload, categoria:form.categoria||'general' }
+        if(form.id) ep.id=form.id
+        await saveEvento(ep)
+      } else {
+        const qp = { ...payload, people:form.people||null, status:form.status||'pendiente' }
+        if(form.id) qp.id=form.id
+        await saveQuedada(qp)
+      }
+      close()
+    } catch(err) {
+      setSaveError(err.message || 'Error al guardar')
+    } finally {
+      setSaving(false)
     }
-    close()
   }
   return (
     <div style={{ background:'white', borderRadius: isMobile ? '16px 16px 0 0' : 16, padding:'1.5rem', width: isMobile ? '100%' : 420, maxWidth: isMobile ? '100%' : '95vw', border:`1px solid ${G[200]}`, maxHeight:'90vh', overflowY:'auto' }}>
@@ -746,9 +761,16 @@ function FormModal({ modal, close, saveEvento, saveQuedada, isMobile }) {
         </FF>
       </>}
       <FF label="Notas"><textarea value={form.notes||''} onChange={e=>set('notes',e.target.value)} placeholder="Notas opcionales..." style={{ width:'100%',minHeight:70 }}/></FF>
+      {saveError && (
+        <div style={{ background:'#fee2e2', border:'1px solid #fca5a5', borderRadius:8, padding:'8px 12px', marginBottom:12, fontSize:13, color:'#991b1b' }}>
+          ⚠️ {saveError}
+        </div>
+      )}
       <div style={{ display:'flex',justifyContent:'flex-end',gap:10,marginTop:'1rem' }}>
-        <button onClick={close} style={btnSecondary}>Cancelar</button>
-        <button onClick={submit} style={btnPrimary}>{isEdit?'💾 Guardar':'+ Añadir'}</button>
+        <button onClick={close} style={btnSecondary} disabled={saving}>Cancelar</button>
+        <button onClick={submit} style={{ ...btnPrimary, opacity:saving?0.7:1 }} disabled={saving}>
+          {saving ? '...' : isEdit ? '💾 Guardar' : '+ Añadir'}
+        </button>
       </div>
     </div>
   )
