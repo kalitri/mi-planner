@@ -549,7 +549,9 @@ function HoyView({ data, T, addTask, toggleTask, deleteTask, setModal, isMobile 
           ))}
         </div>
       </SectionCard>
-      <SectionCard title="📅 Eventos del día">
+      <SectionCard title="📅 Eventos del día" action={
+        <button onClick={() => setModal({ type:'evento', defaultDate:T })} style={{ ...btnPrimary, padding:'5px 10px', fontSize:12 }}>+ Añadir</button>
+      }>
         {todayEvents.length===0&&todayQ.length===0&&<Muted>Día libre 🎉</Muted>}
         {[...todayEvents.map(e=>({...e,_tipo:'evento'})),...todayQ.map(q=>({...q,_tipo:'quedada'}))].map(i => {
           const cat = CATEGORIAS[i.categoria||'general'] || CATEGORIAS.general
@@ -779,9 +781,12 @@ function FormModal({ modal, close, saveEvento, saveQuedada, isMobile }) {
 // ═══════════════════════════════════════════════════════════════════
 // COMPONENTES COMPARTIDOS
 // ═══════════════════════════════════════════════════════════════════
-function SectionCard({ title, children }) {
+function SectionCard({ title, children, action }) {
   return <div style={{ marginBottom:'1.25rem' }}>
-    <div style={{ fontSize:13,fontWeight:600,color:G[400],textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:8 }}>{title}</div>
+    <div style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8 }}>
+      <div style={{ fontSize:13,fontWeight:600,color:G[400],textTransform:'uppercase',letterSpacing:'0.06em' }}>{title}</div>
+      {action}
+    </div>
     <div style={card}>{children}</div>
   </div>
 }
