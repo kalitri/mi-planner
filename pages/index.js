@@ -15,6 +15,17 @@ const CATEGORIAS = {
   bloodbowl: { label:'Blood Bowl', emoji:'🏈', color:'#b91c1c', bg:'#fee2e2' },
   futbol:    { label:'Fútbol',     emoji:'⚽', color:'#1d4ed8', bg:'#dbeafe' },
   quedada:   { label:'Quedada',    emoji:'👥', color:'#7c3aed', bg:'#ede9fe' },
+  workout:   { label:'Workout',    emoji:'💪', color:'#7c2d12', bg:'#ffedd5' },
+}
+
+const GASTO_CATS = {
+  alimentacion: { label:'Alimentación', emoji:'🛒', color:'#059669', bg:'#d1fae5' },
+  ocio:         { label:'Ocio',         emoji:'🎮', color:'#7c3aed', bg:'#ede9fe' },
+  transporte:   { label:'Transporte',   emoji:'🚗', color:'#1d4ed8', bg:'#dbeafe' },
+  ropa:         { label:'Ropa',         emoji:'👕', color:'#be185d', bg:'#fce7f3' },
+  salud:        { label:'Salud',        emoji:'💊', color:'#dc2626', bg:'#fee2e2' },
+  hogar:        { label:'Hogar',        emoji:'🏠', color:'#92400e', bg:'#fef3c7' },
+  otros:        { label:'Otros',        emoji:'📦', color:'#6b7280', bg:'#f3f4f6' },
 }
 
 const toISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
@@ -76,8 +87,10 @@ const NAV = [
   { id:'calendario', emoji:'📅', label:'Calendario', short:'Cal.'   },
   { id:'bloodbowl',  emoji:'🏈', label:'Blood Bowl', short:'BB'     },
   { id:'futbol',     emoji:'⚽', label:'Fútbol',     short:'Fútbol' },
+  { id:'workout',    emoji:'💪', label:'Workout',    short:'Work'   },
   { id:'quedadas',   emoji:'👥', label:'Quedadas',   short:'Queds'  },
   { id:'menu',       emoji:'🥗', label:'Menú',       short:'Menú'   },
+  { id:'finanzas',   emoji:'💰', label:'Finanzas',   short:'€€'     },
   { id:'stats',      emoji:'📊', label:'Stats',      short:'Stats'  },
   { id:'buscar',     emoji:'🔍', label:'Buscar',     short:'Buscar' },
 ]
@@ -86,7 +99,7 @@ const NAV = [
 export default function Home() {
   const { user } = useAuth()
   const [view, setView]       = useState('hoy')
-  const [data, setData]       = useState({ tareas:[], eventos:[], quedadas:[], menu:{} })
+  const [data, setData]       = useState({ tareas:[], eventos:[], quedadas:[], menu:{}, gastos:[] })
   const [modal, setModal]     = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError]     = useState(null)
@@ -107,6 +120,7 @@ export default function Home() {
       .on('postgres_changes',{event:'*',schema:'public',table:'dv_events', filter:`user_id=eq.${user.id}`},()=>cargarTodo(true))
       .on('postgres_changes',{event:'*',schema:'public',table:'dv_habits', filter:`user_id=eq.${user.id}`},()=>cargarTodo(true))
       .on('postgres_changes',{event:'*',schema:'public',table:'dv_meals',  filter:`user_id=eq.${user.id}`},()=>cargarTodo(true))
+      .on('postgres_changes',{event:'*',schema:'public',table:'dv_gastos', filter:`user_id=eq.${user.id}`},()=>cargarTodo(true))
       .subscribe()
     return ()=>supabase.removeChannel(ch)
   },[user?.id])
@@ -117,15 +131,16 @@ export default function Home() {
   const cargarTodo = async (silent=false) => {
     try {
       if (!silent) setLoading(true)
-      const [t,e,q,m] = await Promise.all([
+      const [t,e,q,m,g] = await Promise.all([
         supabase.from('dv_tasks').select('*').eq('user_id',user.id).order('created_at'),
         supabase.from('dv_events').select('*').eq('user_id',user.id).order('date'),
         supabase.from('dv_habits').select('*').eq('user_id',user.id).order('created_at'),
         supabase.from('dv_meals').select('*').eq('user_id',user.id),
+        supabase.from('dv_gastos').select('*').eq('user_id',user.id).order('date'),
       ])
       const menuObj={}
       m.data?.forEach(r=>{ menuObj[r.date]={ Desayuno:r.desayuno||'', Almuerzo:r.almuerzo||'', Merienda:r.merienda||'', Cena:r.cena||'' } })
-      setData({ tareas:t.data||[], eventos:[...(e.data||[]).map(ev=>({...ev,categoria:ev.type||'general'})),...generarRecurrentes()], quedadas:q.data||[], menu:menuObj })
+      setData({ tareas:t.data||[], eventos:[...(e.data||[]).map(ev=>({...ev,categoria:ev.type||'general'})),...generarRecurrentes()], quedadas:q.data||[], menu:menuObj, gastos:g.data||[] })
     } catch { if(!silent) setError('Error al conectar con la base de datos') }
     finally { if(!silent) setLoading(false) }
   }
@@ -195,6 +210,25 @@ export default function Home() {
     setData(d=>({...d,quedadas:d.quedadas.map(q=>q.id===id?{...q,status:next}:q)}))
     await supabase.from('dv_habits').update({status:next}).eq('id',id).eq('user_id',user.id)
   }
+
+  const saveGasto = async form => {
+    const uid=user?.id
+    const db={description:form.description,amount:parseFloat(form.amount)||0,category:form.category||'otros',date:form.date,notes:form.notes||null}
+    if (form.id) {
+      const {data:u,error}=await supabase.from('dv_gastos').update({...db,user_id:uid}).eq('id',form.id).eq('user_id',uid).select().single()
+      if(error) throw new Error(error.message)
+      if(u) setData(d=>({...d,gastos:d.gastos.map(g=>g.id===form.id?{...g,...u}:g)}))
+    } else {
+      const {data:n,error}=await supabase.from('dv_gastos').insert({...db,user_id:uid}).select().single()
+      if(error) throw new Error(error.message)
+      if(n) setData(d=>({...d,gastos:[...d.gastos,n]}))
+    }
+    toast('Gasto guardado ✓')
+  }
+  const deleteGasto = id => setCD({ message:'¿Eliminar este gasto?', onConfirm: async()=>{
+    await supabase.from('dv_gastos').delete().eq('id',id).eq('user_id',user.id)
+    setData(d=>({...d,gastos:d.gastos.filter(g=>g.id!==id)})); toast('Gasto eliminado'); setCD(null)
+  }})
 
   const setMeal = async (date,comida,valor,silent=false) => {
     setData(d=>({...d,menu:{...d.menu,[date]:{...(d.menu[date]||{}),[comida]:valor}}}))
@@ -267,8 +301,10 @@ export default function Home() {
           {view==='calendario' && <CalendarioView  data={data} T={T} setModal={setModal} isMobile={isMobile} toggleEvento={toggleEvento} deleteEvento={deleteEvento} deleteQuedada={deleteQuedada}/>}
           {view==='bloodbowl'  && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="bloodbowl"/>}
           {view==='futbol'     && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="futbol"/>}
+          {view==='workout'    && <AgendaView      data={data} T={T} setModal={setModal} deleteEvento={deleteEvento} filtro="workout"/>}
           {view==='quedadas'   && <QuedadasView    data={data} T={T} setModal={setModal} deleteQuedada={deleteQuedada} cycleStatus={cycleStatus}/>}
           {view==='menu'       && <MenuView        data={data} T={T} setMeal={setMeal} toast={toast}/>}
+          {view==='finanzas'   && <FinanzasView    data={data} T={T} setModal={setModal} deleteGasto={deleteGasto}/>}
           {view==='stats'      && <StatsView       data={data} T={T}/>}
           {view==='buscar'     && <BuscarView      data={data} setModal={setModal}/>}
         </main>
@@ -294,7 +330,7 @@ export default function Home() {
       {/* MODAL */}
       {modal && (
         <div onClick={e=>e.target===e.currentTarget&&setModal(null)} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:isMobile?'flex-end':'center',justifyContent:'center',zIndex:1000}}>
-          <FormModal modal={modal} close={()=>setModal(null)} saveEvento={saveEvento} saveQuedada={saveQuedada} isMobile={isMobile}/>
+          <FormModal modal={modal} close={()=>setModal(null)} saveEvento={saveEvento} saveQuedada={saveQuedada} saveGasto={saveGasto} isMobile={isMobile}/>
         </div>
       )}
 
@@ -751,6 +787,7 @@ function MenuView({ data, T, setMeal, toast }) {
 function StatsView({ data, T }) {
   const dark=useDark(); const colors=th(dark)
   const weekDates=getWeekDates(0)
+  const mesActual=T.slice(0,7)
 
   const weekTasks=data.tareas.filter(t=>weekDates.includes(t.date))
   const donePct=weekTasks.length?Math.round(weekTasks.filter(t=>t.done).length/weekTasks.length*100):0
@@ -765,6 +802,15 @@ function StatsView({ data, T }) {
   const menuFilled=weekDates.reduce((acc,d)=>acc+Object.values(data.menu[d]||{}).filter(Boolean).length,0)
   const menuTotal=weekDates.length*COMIDAS.length
   const menuPct=Math.round(menuFilled/menuTotal*100)
+
+  const workoutSemana=data.eventos.filter(e=>(e.categoria||e.type)==='workout'&&weekDates.includes(e.date)).length
+  const workoutMes=data.eventos.filter(e=>(e.categoria||e.type)==='workout'&&e.date?.startsWith(mesActual)).length
+
+  const gastosEsteMes=(data.gastos||[]).filter(g=>g.date?.startsWith(mesActual))
+  const totalEsteMes=gastosEsteMes.reduce((acc,g)=>acc+(parseFloat(g.amount)||0),0)
+  const gastoPorCat={}
+  gastosEsteMes.forEach(g=>{ const c=g.category||'otros'; gastoPorCat[c]=(gastoPorCat[c]||0)+(parseFloat(g.amount)||0) })
+  const maxGastoCat=Math.max(1,...Object.values(gastoPorCat))
 
   return (
     <div style={{maxWidth:700}}>
@@ -791,7 +837,43 @@ function StatsView({ data, T }) {
           <div style={{fontSize:12,color:colors.mut,marginTop:4}}>{menuPct}% planificado</div>
         </div>
 
-        {/* Por categoría */}
+        {/* Workout */}
+        <div style={cardStyle(dark)}>
+          <div style={{fontSize:13,fontWeight:600,color:colors.sub,marginBottom:12}}>💪 Workout</div>
+          <div style={{display:'flex',gap:24,marginBottom:8}}>
+            <div>
+              <div style={{fontSize:32,fontWeight:700,color:'#7c2d12'}}>{workoutSemana}</div>
+              <div style={{fontSize:11,color:colors.mut}}>esta semana</div>
+            </div>
+            <div>
+              <div style={{fontSize:32,fontWeight:700,color:colors.txt}}>{workoutMes}</div>
+              <div style={{fontSize:11,color:colors.mut}}>este mes</div>
+            </div>
+          </div>
+          <div style={{fontSize:12,color:colors.mut,borderTop:`1px solid ${colors.border}`,paddingTop:8}}>
+            Total registradas: {data.eventos.filter(e=>(e.categoria||e.type)==='workout'&&!e.recurrente).length}
+          </div>
+        </div>
+
+        {/* Finanzas este mes */}
+        <div style={cardStyle(dark)}>
+          <div style={{fontSize:13,fontWeight:600,color:colors.sub,marginBottom:12}}>💰 Gastos este mes</div>
+          <div style={{fontSize:32,fontWeight:700,color:'#dc2626',marginBottom:4}}>{totalEsteMes.toFixed(2)}€</div>
+          <div style={{fontSize:12,color:colors.mut,marginBottom:12}}>{gastosEsteMes.length} gastos registrados</div>
+          {Object.entries(GASTO_CATS).filter(([k])=>gastoPorCat[k]>0).slice(0,4).map(([k,v])=>(
+            <div key={k} style={{marginBottom:6}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,color:colors.txt,marginBottom:2}}>
+                <span>{v.emoji} {v.label}</span>
+                <span style={{color:v.color,fontWeight:600}}>{(gastoPorCat[k]||0).toFixed(2)}€</span>
+              </div>
+              <div style={{height:5,borderRadius:3,background:colors.border,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${((gastoPorCat[k]||0)/maxGastoCat)*100}%`,background:v.color,borderRadius:3}}/>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Por categoría eventos */}
         <div style={cardStyle(dark)}>
           <div style={{fontSize:13,fontWeight:600,color:colors.sub,marginBottom:12}}>📅 Eventos por categoría</div>
           {Object.entries(CATEGORIAS).map(([k,v])=>(
@@ -825,6 +907,100 @@ function StatsView({ data, T }) {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Finanzas ──────────────────────────────────────────────────────────────────
+function FinanzasView({ data, T, setModal, deleteGasto }) {
+  const dark=useDark(); const colors=th(dark)
+  const now=new Date()
+  const [mesIdx, setMesIdx]=useState(now.getMonth())
+  const [anioIdx, setAnioIdx]=useState(now.getFullYear())
+
+  const mesStr=`${anioIdx}-${String(mesIdx+1).padStart(2,'0')}`
+  const gastosDelMes=(data.gastos||[]).filter(g=>g.date?.startsWith(mesStr))
+  const total=gastosDelMes.reduce((acc,g)=>acc+(parseFloat(g.amount)||0),0)
+
+  const porCat={}
+  gastosDelMes.forEach(g=>{ const c=g.category||'otros'; porCat[c]=(porCat[c]||0)+(parseFloat(g.amount)||0) })
+  const maxCat=Math.max(1,...Object.values(porCat))
+
+  const prevMes=()=>{ if(mesIdx===0){setMesIdx(11);setAnioIdx(a=>a-1)}else setMesIdx(m=>m-1) }
+  const nextMes=()=>{ if(mesIdx===11){setMesIdx(0);setAnioIdx(a=>a+1)}else setMesIdx(m=>m+1) }
+
+  const mayorGasto=gastosDelMes.length>0?Math.max(...gastosDelMes.map(g=>parseFloat(g.amount)||0)):0
+
+  return (
+    <div style={{maxWidth:700}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'1.5rem',flexWrap:'wrap',gap:12}}>
+        <div>
+          <h1 style={{fontSize:26,fontWeight:600,color:colors.txt}}>💰 Finanzas</h1>
+          <p style={{color:colors.mut,fontSize:14,marginTop:4}}>Seguimiento de gastos</p>
+        </div>
+        <button onClick={()=>setModal({type:'gasto'})} style={btnPrimary}>+ Añadir gasto</button>
+      </div>
+
+      {/* Nav mes */}
+      <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:'1.5rem'}}>
+        <button onClick={prevMes} style={{...btnSec(dark),padding:'6px 14px'}}>◀</button>
+        <span style={{fontSize:18,fontWeight:600,color:colors.txt,minWidth:160,textAlign:'center'}}>{MESES[mesIdx]} {anioIdx}</span>
+        <button onClick={nextMes} style={{...btnSec(dark),padding:'6px 14px'}}>▶</button>
+      </div>
+
+      {/* Cards resumen */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:'1.5rem'}}>
+        <div style={{...cardStyle(dark),textAlign:'center'}}>
+          <div style={{fontSize:11,color:colors.mut,fontWeight:600,marginBottom:6}}>TOTAL</div>
+          <div style={{fontSize:26,fontWeight:700,color:'#dc2626'}}>{total.toFixed(2)}€</div>
+        </div>
+        <div style={{...cardStyle(dark),textAlign:'center'}}>
+          <div style={{fontSize:11,color:colors.mut,fontWeight:600,marginBottom:6}}>Nº GASTOS</div>
+          <div style={{fontSize:26,fontWeight:700,color:colors.txt}}>{gastosDelMes.length}</div>
+        </div>
+        <div style={{...cardStyle(dark),textAlign:'center'}}>
+          <div style={{fontSize:11,color:colors.mut,fontWeight:600,marginBottom:6}}>MAYOR GASTO</div>
+          <div style={{fontSize:26,fontWeight:700,color:colors.txt}}>{mayorGasto>0?`${mayorGasto.toFixed(2)}€`:'-'}</div>
+        </div>
+      </div>
+
+      {/* Por categoría */}
+      {gastosDelMes.length>0&&(
+        <div style={{...cardStyle(dark),marginBottom:'1.5rem'}}>
+          <div style={{fontSize:13,fontWeight:600,color:colors.sub,marginBottom:12}}>Desglose por categoría</div>
+          {Object.entries(GASTO_CATS).filter(([k])=>porCat[k]>0).sort((a,b)=>(porCat[b[0]]||0)-(porCat[a[0]]||0)).map(([k,v])=>(
+            <div key={k} style={{marginBottom:10}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:13,color:colors.txt,marginBottom:4}}>
+                <span>{v.emoji} {v.label}</span>
+                <span style={{fontWeight:600,color:v.color}}>{(porCat[k]||0).toFixed(2)}€</span>
+              </div>
+              <div style={{height:6,borderRadius:3,background:colors.border,overflow:'hidden'}}>
+                <div style={{height:'100%',width:`${((porCat[k]||0)/maxCat)*100}%`,background:v.color,borderRadius:3}}/>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Lista */}
+      {gastosDelMes.length===0&&<EmptyState icon="💰" text="Sin gastos este mes"/>}
+      {[...gastosDelMes].sort((a,b)=>b.date.localeCompare(a.date)).map(g=>{
+        const cat=GASTO_CATS[g.category||'otros']||GASTO_CATS.otros
+        return (
+          <div key={g.id} style={{...cardStyle(dark),marginBottom:8,display:'flex',alignItems:'center',gap:12,borderLeft:`4px solid ${cat.color}`,borderRadius:'0 12px 12px 0'}}>
+            <span style={{fontSize:20,flexShrink:0}}>{cat.emoji}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:14,fontWeight:500,color:colors.txt,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.description}</div>
+              <div style={{fontSize:12,color:colors.mut}}>{fmtShort(g.date)}{g.notes&&` · ${g.notes}`}</div>
+            </div>
+            <span style={{fontSize:16,fontWeight:700,color:'#dc2626',flexShrink:0}}>{parseFloat(g.amount).toFixed(2)}€</span>
+            <div style={{display:'flex',gap:4,flexShrink:0}}>
+              <IBtn onClick={()=>setModal({type:'gasto',edit:g})}>✏️</IBtn>
+              <IBtn onClick={()=>deleteGasto(g.id)} red>🗑️</IBtn>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -873,14 +1049,15 @@ function BuscarView({ data, setModal }) {
 }
 
 // ── FormModal ─────────────────────────────────────────────────────────────────
-function FormModal({ modal, close, saveEvento, saveQuedada, isMobile }) {
+function FormModal({ modal, close, saveEvento, saveQuedada, saveGasto, isMobile }) {
   const dark=useDark(); const colors=th(dark)
-  const isEdit=!!modal.edit, isEvento=modal.type==='evento', T=todayISO()
+  const isEdit=!!modal.edit, isEvento=modal.type==='evento', isGasto=modal.type==='gasto', T=todayISO()
   const [form, setForm]=useState(
     modal.edit ? {...modal.edit} : {
       title:'',date:modal.defaultDate||T,time:'',place:'',notes:'',
       people:'',status:'pendiente',
-      categoria:modal.defaultCategoria||'general'
+      categoria:modal.defaultCategoria||'general',
+      description:'',amount:'',category:'otros'
     }
   )
   const [saving, setSaving]=useState(false)
@@ -888,53 +1065,88 @@ function FormModal({ modal, close, saveEvento, saveQuedada, isMobile }) {
   const set=(k,v)=>setForm(f=>({...f,[k]:v}))
 
   const submit=async()=>{
-    if(!form.title.trim())return
     setSaving(true); setSaveError(null)
     try {
-      const payload={title:form.title,date:form.date,time:form.time||null,place:form.place||null,notes:form.notes||null}
-      if(isEvento){ const ep={...payload,categoria:form.categoria||'general'}; if(form.id)ep.id=form.id; await saveEvento(ep) }
-      else { const qp={...payload,people:form.people||null,status:form.status||'pendiente'}; if(form.id)qp.id=form.id; await saveQuedada(qp) }
+      if(isGasto){
+        if(!form.description?.trim())return setSaving(false)
+        const gp={description:form.description,amount:form.amount,category:form.category||'otros',date:form.date,notes:form.notes||null}
+        if(form.id)gp.id=form.id
+        await saveGasto(gp)
+      } else {
+        if(!form.title.trim())return setSaving(false)
+        const payload={title:form.title,date:form.date,time:form.time||null,place:form.place||null,notes:form.notes||null}
+        if(isEvento){ const ep={...payload,categoria:form.categoria||'general'}; if(form.id)ep.id=form.id; await saveEvento(ep) }
+        else { const qp={...payload,people:form.people||null,status:form.status||'pendiente'}; if(form.id)qp.id=form.id; await saveQuedada(qp) }
+      }
       close()
     } catch(err){ setSaveError(err.message||'Error al guardar') }
     finally{ setSaving(false) }
   }
 
+  const tipoLabel=isGasto?'gasto':isEvento?'evento':'quedada'
+
   return (
     <div style={{background:colors.card,borderRadius:isMobile?'16px 16px 0 0':16,padding:'1.5rem',width:isMobile?'100%':420,maxWidth:isMobile?'100%':'95vw',border:`1px solid ${colors.border}`,maxHeight:'90vh',overflowY:'auto'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'1.25rem'}}>
-        <h2 style={{fontSize:18,fontWeight:600,color:colors.txt}}>{isEdit?'Editar':'Nuevo'} {isEvento?'evento':'quedada'}</h2>
+        <h2 style={{fontSize:18,fontWeight:600,color:colors.txt}}>{isEdit?'Editar':'Nuevo'} {tipoLabel}</h2>
         <button onClick={close} style={{border:'none',background:'none',cursor:'pointer',fontSize:22,color:colors.mut,lineHeight:1}}>×</button>
       </div>
-      <FF label="Título *">
-        <input value={form.title} onChange={e=>set('title',e.target.value)} placeholder={isEvento?'Ej: Torneo Blood Bowl':'Ej: Cena con Ana'} style={{width:'100%'}} onKeyDown={e=>e.key==='Enter'&&submit()}/>
-      </FF>
-      {isEvento&&(
+
+      {isGasto ? (<>
+        <FF label="Descripción *">
+          <input value={form.description||''} onChange={e=>set('description',e.target.value)} placeholder="Ej: Supermercado Mercadona" style={{width:'100%'}} onKeyDown={e=>e.key==='Enter'&&submit()}/>
+        </FF>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <FF label="Importe (€) *">
+            <input type="number" min="0" step="0.01" value={form.amount||''} onChange={e=>set('amount',e.target.value)} placeholder="0.00" style={{width:'100%'}}/>
+          </FF>
+          <FF label="Fecha">
+            <input type="date" value={form.date||T} onChange={e=>set('date',e.target.value)} style={{width:'100%'}}/>
+          </FF>
+        </div>
         <FF label="Categoría">
-          <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-            {Object.entries(CATEGORIAS).map(([k,v])=>(
-              <button key={k} onClick={()=>set('categoria',k)} style={{padding:'6px 14px',borderRadius:20,border:`2px solid ${form.categoria===k?v.color:'transparent'}`,background:v.bg,color:v.color,cursor:'pointer',fontSize:13,fontWeight:500}}>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+            {Object.entries(GASTO_CATS).map(([k,v])=>(
+              <button key={k} onClick={()=>set('category',k)} style={{padding:'5px 11px',borderRadius:20,border:`2px solid ${(form.category||'otros')===k?v.color:'transparent'}`,background:v.bg,color:v.color,cursor:'pointer',fontSize:12,fontWeight:500}}>
                 {v.emoji} {v.label}
               </button>
             ))}
           </div>
         </FF>
-      )}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-        <FF label="Fecha"><input type="date" value={form.date} onChange={e=>set('date',e.target.value)} style={{width:'100%'}}/></FF>
-        <FF label="Hora"><input type="time" value={form.time} onChange={e=>set('time',e.target.value)} style={{width:'100%'}}/></FF>
-      </div>
-      <FF label="Lugar"><input value={form.place} onChange={e=>set('place',e.target.value)} placeholder="¿Dónde?" style={{width:'100%'}}/></FF>
-      {!isEvento&&<>
-        <FF label="Con quién"><input value={form.people||''} onChange={e=>set('people',e.target.value)} placeholder="Ej: Ana, Carlos" style={{width:'100%'}}/></FF>
-        <FF label="Estado">
-          <select value={form.status||'pendiente'} onChange={e=>set('status',e.target.value)} style={{width:'100%'}}>
-            <option value="pendiente">⏳ Pendiente</option>
-            <option value="confirmada">✅ Confirmada</option>
-            <option value="cancelada">❌ Cancelada</option>
-          </select>
+        <FF label="Notas"><textarea value={form.notes||''} onChange={e=>set('notes',e.target.value)} placeholder="Notas opcionales..." style={{width:'100%',minHeight:60}}/></FF>
+      </>) : (<>
+        <FF label="Título *">
+          <input value={form.title} onChange={e=>set('title',e.target.value)} placeholder={isEvento?'Ej: Torneo Blood Bowl':'Ej: Cena con Ana'} style={{width:'100%'}} onKeyDown={e=>e.key==='Enter'&&submit()}/>
         </FF>
-      </>}
-      <FF label="Notas"><textarea value={form.notes||''} onChange={e=>set('notes',e.target.value)} placeholder="Notas opcionales..." style={{width:'100%',minHeight:70}}/></FF>
+        {isEvento&&(
+          <FF label="Categoría">
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+              {Object.entries(CATEGORIAS).map(([k,v])=>(
+                <button key={k} onClick={()=>set('categoria',k)} style={{padding:'6px 14px',borderRadius:20,border:`2px solid ${form.categoria===k?v.color:'transparent'}`,background:v.bg,color:v.color,cursor:'pointer',fontSize:13,fontWeight:500}}>
+                  {v.emoji} {v.label}
+                </button>
+              ))}
+            </div>
+          </FF>
+        )}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+          <FF label="Fecha"><input type="date" value={form.date} onChange={e=>set('date',e.target.value)} style={{width:'100%'}}/></FF>
+          <FF label="Hora"><input type="time" value={form.time} onChange={e=>set('time',e.target.value)} style={{width:'100%'}}/></FF>
+        </div>
+        <FF label="Lugar"><input value={form.place} onChange={e=>set('place',e.target.value)} placeholder="¿Dónde?" style={{width:'100%'}}/></FF>
+        {!isEvento&&<>
+          <FF label="Con quién"><input value={form.people||''} onChange={e=>set('people',e.target.value)} placeholder="Ej: Ana, Carlos" style={{width:'100%'}}/></FF>
+          <FF label="Estado">
+            <select value={form.status||'pendiente'} onChange={e=>set('status',e.target.value)} style={{width:'100%'}}>
+              <option value="pendiente">⏳ Pendiente</option>
+              <option value="confirmada">✅ Confirmada</option>
+              <option value="cancelada">❌ Cancelada</option>
+            </select>
+          </FF>
+        </>}
+        <FF label="Notas"><textarea value={form.notes||''} onChange={e=>set('notes',e.target.value)} placeholder="Notas opcionales..." style={{width:'100%',minHeight:70}}/></FF>
+      </>)}
+
       {saveError&&<div style={{background:'#fee2e2',border:'1px solid #fca5a5',borderRadius:8,padding:'8px 12px',marginBottom:12,fontSize:13,color:'#991b1b'}}>⚠️ {saveError}</div>}
       <div style={{display:'flex',justifyContent:'flex-end',gap:10,marginTop:'1rem'}}>
         <button onClick={close} style={btnSec(dark)} disabled={saving}>Cancelar</button>
